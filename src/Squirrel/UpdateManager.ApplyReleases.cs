@@ -370,6 +370,12 @@ namespace Squirrel
             async Task invokePostInstall(SemanticVersion currentVersion, bool isInitialInstall, bool firstRunOnly, bool silentInstall)
             {
                 var targetDir = getDirectoryForRelease(currentVersion);
+                if (isInitialInstall)
+                {
+                    var currentDir = CopyToCurrent(targetDir);
+                    if (currentDir != null)
+                        targetDir = currentDir;
+                }
                 var args = isInitialInstall ?
                     String.Format("--squirrel-install {0}", currentVersion) :
                     String.Format("--squirrel-updated {0}", currentVersion);
@@ -413,6 +419,44 @@ namespace Squirrel
                 squirrelApps
                     .Select(exe => new ProcessStartInfo(exe, firstRunParam) { WorkingDirectory = Path.GetDirectoryName(exe) })
                     .ForEach(info => Process.Start(info));
+            }
+
+            public DirectoryInfo CopyToCurrent(DirectoryInfo appDir)
+            {
+                var currentDir = Path.Combine(appDir.Parent.FullName, "current");
+
+                if (appDir.Exists)
+                {
+                    try
+                    {
+                        this.Log().Info(String.Format("Moving {0} directory to current", appDir.Name));
+                        if (Directory.Exists(currentDir))
+                        {
+                            try
+                            {
+                                Utility.EmptyDirectory(currentDir);
+                            }
+                            catch (Exception e)
+                            {
+                                this.Log().Info("Failed to empty current directory, will try to override files");
+                            }
+                        }
+                        else
+                        {
+                            Directory.CreateDirectory(currentDir);
+                        }
+                        Utility.CopyDirectory(appDir, new DirectoryInfo(currentDir));
+                    }
+                    catch (Exception e)
+                    {
+                        this.Log().InfoException("Failed to move files to current directory", e);
+                    }
+                }
+                if (!Directory.Exists(currentDir))
+                {
+                    return null;
+                }
+                return new DirectoryInfo(currentDir);
             }
 
             void fixPinnedExecutables(SemanticVersion newCurrentVersion, bool removeAll = false)

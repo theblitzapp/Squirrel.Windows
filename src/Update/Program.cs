@@ -610,14 +610,85 @@ namespace Squirrel.Update
                 throw new ArgumentException();
             }
 
+            this.Log().Info("Waiting for parent to exit");
             if (shouldWait) waitForParentToExit();
+            this.Log().Info("parent has exited");
 
             try {
+                var currentExe = RunFromCurrent(exeName, appDir, targetExe);
+                if (currentExe != null)
+                {
+                    targetExe = currentExe;
+                }
                 this.Log().Info("About to launch: '{0}': {1}", targetExe.FullName, arguments ?? "");
                 Process.Start(new ProcessStartInfo(targetExe.FullName, arguments ?? "") { WorkingDirectory = Path.GetDirectoryName(targetExe.FullName) });
             } catch (Exception ex) {
                 this.Log().ErrorException("Failed to start process", ex);
             }
+        }
+
+        public FileInfo RunFromCurrent(string exeName, string appDir, FileInfo targetExe)
+        {
+            var currentDir = Path.Combine(appDir, "current");
+            FileInfo currentExe = new FileInfo(Path.Combine(currentDir, exeName.Replace("%20", " ")));
+
+            try
+            {
+                bool copyToCurrent = false;
+                if (currentExe.Exists)
+                {
+                    var currentVersion = FileVersionInfo.GetVersionInfo(currentExe.FullName);
+                    var targetVersion = FileVersionInfo.GetVersionInfo(targetExe.FullName);
+
+                    this.Log().Info("Current directory app version:" + currentVersion.FileVersion);
+                    if (currentVersion.FileVersion != targetVersion.FileVersion)
+                    {
+                        copyToCurrent = true;
+                    }
+                }
+                else
+                {
+                    copyToCurrent = true;
+                }
+
+                if (copyToCurrent)
+                {
+                    this.Log().Info("Copying target to current");
+                    try
+                    {
+                        Utility.EmptyDirectory(currentDir);
+                    }
+                    catch (Exception e)
+                    {
+                        this.Log().Info("Failed to empty current directory, will try to override files");
+                    }
+                    Utility.CopyDirectory(new DirectoryInfo(targetExe.Directory.FullName), new DirectoryInfo(currentDir));
+                }
+            }
+            catch (Exception e)
+            {
+                this.Log().InfoException("Failed to move current directory", e);
+            }
+
+            if (!Directory.Exists(currentDir))
+            {
+                return null;
+            }
+
+            this.Log().Info("Want to launch '{0}'", currentExe);
+
+            // Check for path canonicalization attacks
+            if (!currentExe.FullName.StartsWith(appDir, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if (!currentExe.Exists)
+            {
+                this.Log().Error("File {0} doesn't exist in current release", currentExe);
+                return null;
+            }
+            return currentExe;
         }
 
         public void ShowHelp()
